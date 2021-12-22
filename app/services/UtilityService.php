@@ -36,7 +36,7 @@ class UtilityService {
             'amount' => $loan->repayment,
             'telephone' => $user->telephone,
             'date_of_disbursement' => date('Y-m-d'),
-            'date_of_collection' => $loan->due_date,
+            'date_of_collection' => $loan->collection_date,
             'tenor' => 1
         ])->json();
 

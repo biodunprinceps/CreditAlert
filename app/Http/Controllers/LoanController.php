@@ -47,4 +47,9 @@ class LoanController extends Controller
     {
         return LoanServices::allLoansByStatus($request);
     }
+
+    public function saveCustomerInfo(Request $request)
+    {
+        return LoanServices::saveCustomerInfo($request);
+    }
 }

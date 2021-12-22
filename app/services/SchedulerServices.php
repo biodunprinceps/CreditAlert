@@ -37,7 +37,6 @@ class SchedulerServices{
                 $loan->save();
                 continue;
             }
-
             if($bankdata = PaystackServices::validateAccountNumber(trim($loan->preferred_bank_account_no), trim($loan->preferred_bank_code))){
                 if($bankdata['status'] == 'success'){
                     $loan->verified_bank_full_name = $bankdata["data"]["account_name"];
@@ -53,11 +52,10 @@ class SchedulerServices{
                 continue;
             }
             $borrower = LoanDiskServices::searchTelephoneLoanDisk($user->telephone);
-
+            // add borrower if it does not exist
             if($borrower == 0){ //not found on loandisk
                 $borrower = LoanDiskServices::searchEmailLoanDisk($user->email);
                 if($borrower == 0){ //not found on loandisk
-
                     //create new borrower
                     $newuniquenumber = self::generateUniqueNumber(); //generate new unique number
                     $loanid = LoanDiskServices::getLoanUniqueNumber(0, $newuniquenumber); //generate loan id
@@ -67,19 +65,18 @@ class SchedulerServices{
                     $new_log = new LoanLog;
                     $new_log->uniquenumber = $newuniquenumber;
                     $new_log->ippisnumber = $user->ippisnumber;
+                    $new_log->authid = $user->authid;
                     $new_log->numberofloan = '1';
                     $new_log->save();
 
                     $addBorrower = LoanDiskServices::addBorrower($loan->id);
                     if (!$addBorrower) {
                         $loan->cron_error = "Error adding Borrower";
-                        // $loan->status = '-3';
                         $loan->save();
                         continue;
                     }
                     if ($addBorrower['status'] == 'error') {
                         $loan->cron_error = "Add borrower " . $addBorrower['message'][0];
-                        // $loan->status = '-3';
                         $loan->save();
                         continue;
                     } else {
@@ -96,7 +93,7 @@ class SchedulerServices{
                     }
                     $new_log->loandisk_borrowerid = $new_borrower['borrower_id'];
                     $new_log->save();
-                }else{
+                }else{//get numeric id and alphanumeric id from existing borrower
                     $borrower_numeric_id = $borrower['borrower_id'];
                     $borrower_alphanumeric_id = $borrower['borrower_unique_number'];
                     $no = "01";
@@ -121,10 +118,9 @@ class SchedulerServices{
                     $log->uniquenumber = $borrower_alphanumeric_id;
                     $log->save();
                 }
-            }else{
+            }else{ //get numeric id and alphanumeric id from existing borrower
                 $borrower_numeric_id = $borrower['borrower_id'];
                 $borrower_alphanumeric_id = $borrower['borrower_unique_number'];
-                // $loanid = LoanDiskServices::getLoanUniqueNumber(0, $borrower_alphanumeric_id);
                 $no = "01";
                 if ($all_loans = LoanDiskServices::fetchAllLoansofBorrower($borrower_numeric_id)) {
                     $no = count($all_loans);
@@ -135,7 +131,6 @@ class SchedulerServices{
                 }
 
                 $loanid = "$borrower_alphanumeric_id-$no";
-                // return $loanid;
                 $loan->loanid = $loanid;
                 $loan->save();
                 if(!$log = LoanLog::where('ippisnumber',$user->ippisnumber)->first()){
@@ -150,6 +145,8 @@ class SchedulerServices{
                 $log->save();
             }
 
+
+            // add the loan to loandisk
             $addLoan = LoanDiskServices::addLoan($loan->id);
             if (!$addLoan) {
                 $loan->cron_error = "Error adding Loan";
@@ -167,19 +164,19 @@ class SchedulerServices{
                 $loan->save();
             }
 
+
+            // setup deduction
             $deduction_setup = UtilityService::setupDeduction($loan->loanid);
             if(!$deduction_setup){
                 $loan->cron_error = "Error setting up deduction";
                 $loan->save();
                 continue;
             }
-
             if($deduction_setup['status'] == 'error'){
                 $loan->cron_error = "Error setting up deduction";
                 $loan->save();
                 continue;
             }
-
         }
         return "done";
     }

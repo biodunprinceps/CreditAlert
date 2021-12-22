@@ -44,6 +44,12 @@ Route::prefix('v1')->group(function () {
         Route::post('status/change',[LoanController::class, 'changeLoanStatus']);
     });
 
+    Route::prefix('user')->group(function () {
+        Route::post('info/add',[LoanController::class, 'saveCustomerInfo']);
+    });
+
+
+
     Route::get('test', function () {
         return SchedulerServices::processPayment();
     });

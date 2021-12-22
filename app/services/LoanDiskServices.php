@@ -109,6 +109,9 @@ class LoanDiskServices{
         $httpcode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
         curl_close($curl);
 
+        if($data['response']['Results'][0] == []){
+            return 0;
+        }
         if (!$data) {
             return false;
         }
@@ -144,6 +147,9 @@ class LoanDiskServices{
         $data = json_decode(curl_exec($curl), true);
         $httpcode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
         curl_close($curl);
+        if($data['response']['Results'][0] == []){
+            return 0;
+        }
         if (!$data) {
             return false;
         }
@@ -174,7 +180,7 @@ class LoanDiskServices{
         $user = User::where('authid',$loan->authid)->first();
 
 
-        $records = LoanLog::where("ippisnumber", "=", "$user->ippisnumber")->first();
+        $records = LoanLog::where("authid", "=", "$user->authid")->first();
 
         // $title = $loan->title;
         // if (ucfirst($loan->title) == "Mr") {
@@ -195,7 +201,8 @@ class LoanDiskServices{
 
         $post_array = array();
         $post_array['borrower_unique_number'] = "$records->uniquenumber";
-        $post_array['borrower_fullname'] = ucwords(strtolower($user->fullname));
+        $post_array['borrower_fullname'] = "";
+        $post_array['borrower_firstname'] = ucwords(strtolower($user->fullname));
         $post_array['borrower_business_name'] = ucwords(strtolower($user->place_of_work));
         $post_array['borrower_country'] = 'NG';
         // $post_array['borrower_title'] = $title;
@@ -418,8 +425,11 @@ class LoanDiskServices{
         $post_array['loan_fee_id_928'] = 0;
         $post_array['loan_status_id'] = "1";
         //IPPIS (or Staff) ID no.
-        $post_array['custom_field_1288'] = $user->ippisnumber;
-
+        if($user->ippisnumber == null){
+            $post_array['custom_field_1288'] = $user->telephone;
+        }else{
+            $post_array['custom_field_1288'] = $user->ippisnumber;
+        }
         //Monthly Re-Pmt
         $post_array['custom_field_1294'] = number_format((float) $loan->repayment, 2, '.', ''); //
 

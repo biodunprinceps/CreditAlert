@@ -14,7 +14,7 @@ class LoanServices
 {
         //status
         // -1 = Incomplete
-        // 0= new application
+        // 0 = new application
         // 4 = awaiting payment
         // 1 =disbursed
         // 2 =cancelled
@@ -22,10 +22,11 @@ class LoanServices
 
     public static function apply($request)
     {
-        $ippis_number = $request->ippis_number;
+        $ippis_number = $request->ippis_number; // not needed
         $telephone = $request->telephone;
         $email = $request->email;
-
+        $accountnumber = $request->accountnumber;
+        $bankcode = $request->bankcode;
         //if user exist
         if($user = User::where('email',$email)->where('telephone',$telephone)->first()){
             $user->loan_status = $user->loan_status;
@@ -42,19 +43,14 @@ class LoanServices
                 $loan = LoanApplication::where('authid',$user->authid)->where('status',-1)->first();
                 return response()->json(['status'=>'success', 'message'=>'Loan Application Successful', 'id'=>$loan->id],200);
             }
-
             return self::getOffer($user->authid,null,$type=2);
 
-
         }else{ //new user
-            //get loan offer
             $authid = 'AUTH' . date("Ymdhis").rand(111111,999999).rand(111111,999999);
-            $result = self::checkRemita($telephone,$type=1,$email,$ippis_number,$authid);
+            $result = self::checkRemita($telephone,$bankcode,$accountnumber,$type=1,$email,$ippis_number,$authid);
             return self::getOffer($result["authid"],$result["auth_code"],$type=1);
         }
 
-
-        // return response()->json(['status'=>'success', 'message'=>'Loan application successful'],200);
     }
 
     public static function getOffer($authid,$authcode=null,$type)
@@ -73,9 +69,9 @@ class LoanServices
             $hours = floor(($diff - $years * 365*60*60*24 - $months*30*60*60*24 - $days*60*60*24)/ (60*60));
             if($hours > 24)
             {
-                $result = self::checkRemita($user->telephone,$type=2,$user->email,$user->ippis_number,$user->authid);
+                $result = self::checkRemita($user->telephone,$user->bankcode,$user->accountnumber,$type=2,$user->email,$user->ippis_number,$user->authid);
                 if(!$salary = RemitaPayment::where('authcode',$result["authcode"])->first()){
-                    return response()->json(['status'=>'error', 'message'=>'You cannot take a loan at this point'],400);
+                    return response()->json(['status'=>'error', 'message'=>'You cannot take a loan at this pointtt'],400);
                 }
                 $authcode = $result['auth_code'];
 
@@ -99,14 +95,15 @@ class LoanServices
         if($days > 30){
             return response()->json(['status'=>'error', 'message'=>'You cannot take a loan at this point'],400);
         }
-
         $loan_amount = 0.5 * $salary->amount;
         $loan_amount = round($loan_amount, -3);
         $today = Carbon::now()->format('d');
         if($today < 15){
             $due_date = date('Y-m-5',strtotime("+1 month"));
+            $collection_date = date('Y-m-15');
         }else{
             $due_date = date('Y-m-5',strtotime("+2 month"));
+            $collection_date = date('Y-m-15',strtotime("+1 month"));
         }
         $giro_reference = date('YmdHis'). Helper::randomString(20, true);
         $user = User::where('authid',$authid)->first();
@@ -117,6 +114,7 @@ class LoanServices
         $loan->giro_reference = $giro_reference;
         $loan->authid = $authid;
         $loan->due_date = $due_date;
+        $loan->collection_date = $collection_date;
         $loan->repayment = $total_repayment;
         $loan->loan_amount = $loan_amount;
         $loan->auth_code = $authcode;
@@ -145,21 +143,32 @@ class LoanServices
         $user->save();
     }
 
-    public static function checkRemita($telephone,$type,$email,$ippis_number=null,$authid)
+    public static function saveCustomerInfo($request)
+    {
+        if(!$user = User::where('authid',$request->authid)->first()){
+            return response()->json(['status'=>'error','message'=>'User not found'],400);
+        }
+        $user->telephone = $request->telephone;
+        $user->email = $request->email;
+        $user->save();
+        return response()->json(['status'=>'success','message'=>'Information added successfully'],200);
+    }
+
+    public static function checkRemita($telephone,$bankcode,$accountnumber,$type,$email,$ippis_number=null,$authid)
     {
         $authcode = date("YmdHis") . Helper::randomString(20, true);
-        if($result = RemitaServices::remitaRetrievedDeductions($telephone, $authcode)){
+        if($result = RemitaServices::remitaRetrievedDeductions($authcode,$bankcode,$accountnumber)){
             if($result['status'] == 'success'){
                 $customer_id = $result['data']['customerId'];
                 $fullname = $result['data']['customerName'];
-                $accountnumber = $result['data']['accountNumber'];
-                $bankcode = $result['data']['bankCode'];
+                $verified_account_number = $result['data']['accountNumber'];
+                $verified_bank_code = $result['data']['bankCode'];
                 $bvn = $result['data']['bvn'];
                 $place_of_work = $result['data']['companyName'];
                 $salary_details = $result['data']['salaryPaymentDetails'];
                 $loan_payments = $result['data']['loanHistoryDetails'];
                 if($type == 1){
-                    self::createNewUser($fullname,$telephone,$customer_id,$email,$place_of_work,$bvn,$accountnumber,$bankcode,$ippis_number,$authid);
+                    self::createNewUser($fullname,$telephone,$customer_id,$email,$place_of_work,$bvn,$verified_account_number,$verified_bank_code,$ippis_number,$authid);
                 }
                 self::saveRemitaSalary($salary_details,$authcode);
                 self::saveRemitaPayment($loan_payments,$authcode);
@@ -175,7 +184,6 @@ class LoanServices
             return response()->json(['status'=>'error','message'=>'We cannot offer you a loan at this point, please try again later'],400);
         }
     }
-
     public static function saveRemitaSalary($salary_details,$authcode)
     {
         foreach($salary_details as $salary_detail){
@@ -214,13 +222,12 @@ class LoanServices
             return response()->json(['status'=>'error','message'=>'Loan Id not found'],400);
         }
         $user = User::where('authid',$loan->authid)->first();
-
-        if($loandisk_data_telephone = LoanDiskServices::fetchBorrowerWithTelephone($user->telephone)){
-            $existing_customer = true;
-        }
-        if($loandisk_data_email = LoanDiskServices::fetchBorrowerFromEmail($user->email)){
-            $existing_customer = true;
-        }
+        // if($loandisk_data_telephone = LoanDiskServices::fetchBorrowerWithTelephone($user->telephone)){
+        //     $existing_customer = true;
+        // }
+        // if($loandisk_data_email = LoanDiskServices::fetchBorrowerFromEmail($user->email)){
+        //     $existing_customer = true;
+        // }
         $ippis_number = $user->ippisnumber;
         if($ippis_number != null){
             $ippis_details = IppisVerification::where('ippisnumber',$ippis_number)->first();
@@ -387,8 +394,5 @@ class LoanServices
         //edit in Loandisk
         $user->place_of_work = $request->place_of_work;
         $user->save();
-
-
     }
-
 }

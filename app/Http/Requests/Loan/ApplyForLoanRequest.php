@@ -28,8 +28,10 @@ class ApplyForLoanRequest extends FormRequest
     {
         return [
             'ippis_number' => 'nullable',
-            'telephone' => 'required',
-            'email' => 'required|email'
+            'telephone' => 'nullable',
+            'email' => 'nullable',
+            'accountnumber' => 'required',
+            'bankcode' => 'required'
         ];
     }
 
